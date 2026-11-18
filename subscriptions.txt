@@ -1,2 +1,2 @@
 # One subscription URL per line. Remove # to enable an example.
-# https://example.com/subscription.txt
+https://raw.githubusercontent.com/HnCgs/HomayounConfigs/refs/heads/main/configs.txt
