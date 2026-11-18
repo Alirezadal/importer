@@ -11,12 +11,20 @@ concurrency:
 jobs:
   update:
     runs-on: ubuntu-latest
+    timeout-minutes: 14
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - run: pip install -r requirements.txt
+      - name: Install Xray core
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download --repo XTLS/Xray-core --pattern Xray-linux-64.zip --dir /tmp/xray-release
+          unzip -q /tmp/xray-release/Xray-linux-64.zip -d /tmp/xray-core
+          sudo install /tmp/xray-core/xray /usr/local/bin/xray
       - run: python main.py
       - name: Commit subscription
         run: |
