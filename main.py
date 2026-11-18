@@ -10,22 +10,74 @@ PATTERN = re.compile(r'''(?:vless|vmess|trojan|ss|ssr|hysteria2|hy2|tuic)://[^\s
 def decode(s):
     return base64.urlsafe_b64decode(s + '=' * (-len(s) % 4)).decode()
 
+def sources(filename):
+    path = Path(filename)
+    if not path.exists(): return []
+    return [line.strip() for line in path.read_text(encoding='utf-8-sig').splitlines()
+            if line.strip() and not line.lstrip().startswith('#')]
+
+
+def fetch(url):
+    with requests.get(url, timeout=(10, 30), stream=True,
+                      headers={'User-Agent': 'v2rayN/7.0'}) as r:
+        r.raise_for_status()
+        data = bytearray()
+        for chunk in r.iter_content(65536):
+            data.extend(chunk)
+            if len(data) > 8 * 1024 * 1024:
+                raise ValueError('Source too large')
+        return data.decode('utf-8-sig')
+
+
+def parse_subscription(text):
+    links = PATTERN.findall(text)
+    if not links:
+        try:
+            links = PATTERN.findall(decode(''.join(text.split())))
+        except (ValueError, UnicodeError):
+            pass
+    if not links:
+        raise ValueError('No supported URI list found')
+    return links
+
+
+def telegram(channel):
+    channel = channel.removeprefix('https://t.me/').removeprefix('s/').strip('/').lstrip('@')
+    if not re.fullmatch(r'[A-Za-z0-9_]+', channel): raise ValueError('Invalid channel')
+    soup = BeautifulSoup(fetch(f'https://t.me/s/{channel}'), 'html.parser')
+    posts = soup.select('.tgme_widget_message[data-post]')
+    if not posts: raise ValueError('No visible posts')
+    posts.sort(key=lambda p: int(p['data-post'].rsplit('/', 1)[-1]))
+    links = []
+    for post in posts[-10:]:
+        for msg in post.select('.tgme_widget_message_text'):
+            links.extend(PATTERN.findall(msg.get_text(separator='\n')))
+            for a in msg.select('a[href]'): links.extend(PATTERN.findall(a['href']))
+    return links
+
+
+def subscription(url):
+    u = urlsplit(url)
+    if u.scheme not in ('http', 'https') or not u.hostname:
+        raise ValueError('Invalid subscription URL')
+    return parse_subscription(fetch(url))
+
+
 def collect():
     links = []
-    for channel in Path('channels.txt').read_text().splitlines():
-        channel = channel.strip().lstrip('@')
-        if not channel or channel.startswith('#'): continue
-        if not re.fullmatch(r'[A-Za-z0-9_]+', channel): raise ValueError('Invalid channel')
-        r = requests.get(f'https://t.me/s/{channel}', timeout=45)
-        r.raise_for_status()
-        soup = BeautifulSoup(r.text, 'html.parser')
-        posts = soup.select('.tgme_widget_message[data-post]')
-        if not posts: raise RuntimeError('No visible posts; keeping previous output')
-        posts.sort(key=lambda p: int(p['data-post'].rsplit('/', 1)[-1]))
-        for post in posts[-10:]:
-            for msg in post.select('.tgme_widget_message_text'):
-                links.extend(PATTERN.findall(msg.get_text(separator='\n')))
-                for a in msg.select('a[href]'): links.extend(PATTERN.findall(a['href']))
+    success = 0
+    for filename, reader in [('channels.txt', telegram), ('subscriptions.txt', subscription)]:
+        for i, source in enumerate(sources(filename), 1):
+            try:
+                found = reader(source)
+                links.extend(found)
+                success += 1
+                print(f'{filename} source {i}: {len(found)} candidates')
+            except Exception as exc:
+                # Never print subscription URLs or credentials in public logs.
+                print(f'{filename} source {i}: failed ({type(exc).__name__})')
+    if not success:
+        raise RuntimeError('All sources failed; keeping previous output')
     return list(dict.fromkeys(links))
 
 def outbound(link):

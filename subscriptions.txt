@@ -1,0 +1,2 @@
+# One subscription URL per line. Remove # to enable an example.
+# https://example.com/subscription.txt
