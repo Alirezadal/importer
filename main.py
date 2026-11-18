@@ -158,7 +158,7 @@ def test(link):
 def main():
     subprocess.run(['xray','version'],check=True,stdout=subprocess.DEVNULL)
     links=collect()
-    with ThreadPoolExecutor(max_workers=8) as pool: results=list(pool.map(test,links))
+    with ThreadPoolExecutor(max_workers=20) as pool: results=list(pool.map(test,links))
     good=[link for status,link in results if status=='passed']
     print('Candidates:',len(links),'Passed:',len(good),'Failed:',sum(s=='failed' for s,_ in results),'Unsupported:',sum(s=='unsupported' for s,_ in results))
     # Successful fetch with zero passing links deliberately publishes an empty list.
